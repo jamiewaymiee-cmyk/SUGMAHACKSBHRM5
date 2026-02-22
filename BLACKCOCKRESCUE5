@@ -1,0 +1,355 @@
+-- [ LIBRARY LOAD ]
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/jamiewaymiee-cmyk/SUGMA-LIBRARY/refs/heads/main/SUGMAHACKS", true))()
+
+-- [ SERVICES ]
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+
+-- [ LOCAL PLAYER ]
+local Player = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- ==================== CONFIGURATION ====================
+
+-- Aimbot Settings
+local AimbotEnabled = false
+local AimPart = "Head"
+local FOVRadius = 300
+local ShowFOV = true
+local Smoothness = 8
+local DeadZone = 5
+
+-- ESP Settings
+local ESP_ENABLED = false
+local ESP_OBJECTS = {}
+
+-- Shared Scanning
+local SCAN_INTERVAL = 0.5
+local ValidTargets = {} -- Shared table for both ESP and Aimbot
+
+-- Visuals Settings
+local FullbrightEnabled = false
+local TimeChangerValue = 12
+
+-- Aimbot Runtime
+local Target = nil
+local IsAiming = false
+local LastTarget = nil
+local LockTime = 0
+
+-- [ DRAWING: FOV CIRCLE ]
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness = 2
+FOVCircle.Color = Color3.fromRGB(255, 0, 127)
+FOVCircle.Filled = false
+FOVCircle.Radius = FOVRadius
+FOVCircle.Visible = false
+FOVCircle.Transparency = 1
+
+-- ==================== HELPER FUNCTIONS ====================
+
+-- Checks if a model is a valid living target
+local function IsValidTarget(model)
+    if not model or not model.Parent then return false end
+    if model.Name ~= "Male" then return false end
+    
+    -- 1. Check for Humanoid and Health (The Dead Check)
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+    if humanoid.Health <= 0 then return false end -- Ignores dead people
+
+    -- 2. Check for Body Parts
+    local head = model:FindFirstChild("Head")
+    local root = model:FindFirstChild("Root") or model:FindFirstChild("HumanoidRootPart")
+    
+    if not head or not root then return false end
+
+    return true
+end
+
+local function isRightClickHeld()
+    return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+end
+
+-- ==================== ESP FUNCTIONS ====================
+
+local function clearESP()
+	for _, data in pairs(ESP_OBJECTS) do
+		if data.Highlight then data.Highlight:Destroy() end
+		if data.Billboard then data.Billboard:Destroy() end
+	end
+	table.clear(ESP_OBJECTS)
+end
+
+local function updateESP()
+    -- Sync ESP with ValidTargets table
+    if not ESP_ENABLED then return end
+
+    -- Remove invalid/dead ESP
+    for model, data in pairs(ESP_OBJECTS) do
+        if not IsValidTarget(model) then
+            if data.Highlight then data.Highlight:Destroy() end
+            if data.Billboard then data.Billboard:Destroy() end
+            ESP_OBJECTS[model] = nil
+        end
+    end
+
+    -- Add new ESP
+    for _, model in ipairs(ValidTargets) do
+        if not ESP_OBJECTS[model] then
+            local root = model:FindFirstChild("Root") or model:FindFirstChild("HumanoidRootPart")
+            if root then
+                local highlight = Instance.new("Highlight")
+                highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                highlight.FillTransparency = 0.6
+                highlight.OutlineTransparency = 0
+                highlight.Adornee = model
+                highlight.Parent = model
+
+                local billboard = Instance.new("BillboardGui")
+                billboard.Size = UDim2.new(0, 100, 0, 40)
+                billboard.StudsOffset = Vector3.new(0, 3, 0)
+                billboard.AlwaysOnTop = true
+                billboard.Adornee = root
+                billboard.Parent = model
+
+                local text = Instance.new("TextLabel")
+                text.Size = UDim2.new(0.5, 0, 0.5, 0)
+                text.BackgroundTransparency = 1
+                text.TextColor3 = Color3.new(1, 1, 1)
+                text.TextStrokeTransparency = 0
+                text.TextScaled = true
+                text.Font = Enum.Font.SourceSansBold
+                text.Text = "0 studs"
+                text.Parent = billboard
+
+                ESP_OBJECTS[model] = {
+                    Highlight = highlight,
+                    Billboard = billboard,
+                    Label = text,
+                    Root = root
+                }
+            end
+        end
+    end
+end
+
+-- ==================== AIMBOT FUNCTIONS ====================
+
+local function getClosestTarget()
+    local closestPart = nil
+    local shortestDistance = FOVRadius
+    local mousePos = UserInputService:GetMouseLocation()
+    local centerScreen = Camera.ViewportSize / 2
+
+    -- Sticky targeting (Keeps locked on until dead or key released)
+    if LastTarget and LastTarget.Parent and IsValidTarget(LastTarget.Parent) then
+        local pos, onScreen = Camera:WorldToViewportPoint(LastTarget.Position)
+        if onScreen then
+            local distanceFromMouse = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
+            -- If target is still relatively close to mouse, stick to it
+            if distanceFromMouse <= FOVRadius * 1.5 then
+                return LastTarget
+            end
+        end
+    end
+
+    -- Find new target from ValidTargets table
+    for _, model in ipairs(ValidTargets) do
+        local part = model:FindFirstChild(AimPart)
+        if part then
+            local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if onScreen then
+                local distanceFromCenter = (Vector2.new(pos.X, pos.Y) - centerScreen).Magnitude
+                if distanceFromCenter < shortestDistance then
+                    closestPart = part
+                    shortestDistance = distanceFromCenter
+                end
+            end
+        end
+    end
+    
+    return closestPart
+end
+
+local function moveMouseToTarget(targetPos, deltaTime)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(targetPos)
+    
+    if not onScreen then return end
+    
+    local mousePos = UserInputService:GetMouseLocation()
+    local targetScreen = Vector2.new(screenPos.X, screenPos.Y)
+    
+    local delta = targetScreen - mousePos
+    local distance = delta.Magnitude
+    
+    if distance < DeadZone then return end
+    
+    local smoothFactor = math.min(1, (deltaTime * 60) / Smoothness)
+    local moveAmount = delta * smoothFactor
+    
+    if moveAmount.Magnitude > distance then
+        moveAmount = delta
+    end
+    
+    if mousemoverel then
+        mousemoverel(moveAmount.X, moveAmount.Y)
+    elseif mousemoveabs then
+        local newPos = mousePos + moveAmount
+        mousemoveabs(newPos.X, newPos.Y)
+    end
+end
+
+-- ==================== UI CREATION ====================
+
+local MainGui = Library:CreateWindow("SugmaHacks - PD Edition")
+
+-- [ TAB 1: AIMBOT ]
+local CombatElements = MainGui:CreateTab("Aimbot")
+
+CombatElements:CreateToggle("Aimbot Enabled", "AimbotToggle", false, function(state) 
+    AimbotEnabled = state 
+end)
+
+CombatElements:CreateDropdown("Aim Part", "AimPartDrop", {"Head", "Root"}, function(val) 
+    AimPart = val 
+end)
+
+CombatElements:CreateSlider("FOV Radius", "FOVRad", 50, 800, 300, function(val) 
+    FOVRadius = val 
+end)
+
+CombatElements:CreateToggle("Show FOV Circle", "ShowFOVToggle", false, function(state) 
+    ShowFOV = state 
+end)
+
+CombatElements:CreateSlider("Smoothness", "SmoothVal", 1, 20, 8, function(val) 
+    Smoothness = val 
+end)
+
+CombatElements:CreateSlider("DeadZone", "DeadZoneVal", 1, 20, 5, function(val) 
+    DeadZone = val 
+end)
+
+-- [ TAB 2: ESP ]
+local ESPElements = MainGui:CreateTab("ESP")
+
+ESPElements:CreateToggle("Male ESP", "MaleESP", false, function(state) 
+    ESP_ENABLED = state
+    if not state then 
+        clearESP() 
+    end
+end)
+
+-- [ TAB 3: VISUALS ]
+local VisualElements = MainGui:CreateTab("Visuals")
+
+VisualElements:CreateToggle("Fullbright", "Fullbright", false, function(state) 
+    FullbrightEnabled = state 
+end)
+
+VisualElements:CreateSlider("Time Changer", "TimeVal", 0, 24, 12, function(val) 
+    TimeChangerValue = val 
+end)
+
+MainGui:CreateConfigTab()
+
+-- ==================== BACKGROUND LOOPS ====================
+
+-- UNIFIED SCANNING LOOP
+-- This scans Workspace for valid (LIVING) players and updates the table used by BOTH ESP and Aimbot.
+task.spawn(function()
+    while true do
+        local tempTargets = {}
+        -- Using GetChildren to match ESP logic and reduce lag
+        for _, obj in ipairs(Workspace:GetChildren()) do
+            if IsValidTarget(obj) then
+                table.insert(tempTargets, obj)
+            end
+        end
+        ValidTargets = tempTargets
+        
+        if ESP_ENABLED then
+            updateESP()
+        end
+        
+        task.wait(SCAN_INTERVAL)
+    end
+end)
+
+-- ==================== MAIN RENDER LOOP ====================
+
+local lastFrameTime = tick()
+
+RunService.RenderStepped:Connect(function()
+    local currentTime = tick()
+    local deltaTime = currentTime - lastFrameTime
+    lastFrameTime = currentTime
+    
+    -- Sync Lib Values
+    if Library.Flags["FOVRad"] then FOVRadius = Library.Flags["FOVRad"] end
+    if Library.Flags["SmoothVal"] then Smoothness = Library.Flags["SmoothVal"] end
+    
+    -- ========== VISUALS ==========
+    if FullbrightEnabled then
+        Lighting.ClockTime = 14
+        Lighting.Brightness = 2
+        Lighting.GlobalShadows = false
+        Lighting.Ambient = Color3.new(1, 1, 1)
+        Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+    else
+        Lighting.ClockTime = TimeChangerValue
+        Lighting.GlobalShadows = true
+    end
+    
+    -- ========== AIMBOT ==========
+    FOVCircle.Visible = ShowFOV and AimbotEnabled
+    FOVCircle.Radius = FOVRadius
+    FOVCircle.Position = UserInputService:GetMouseLocation()
+    
+    IsAiming = AimbotEnabled and isRightClickHeld()
+    
+    if IsAiming then
+        local targetPart = getClosestTarget()
+        
+        -- Double check target is still valid/alive before aiming
+        if targetPart and targetPart.Parent and IsValidTarget(targetPart.Parent) then
+            Target = targetPart
+            LastTarget = targetPart
+            LockTime = currentTime
+            FOVCircle.Color = Color3.fromRGB(0, 255, 0)
+            moveMouseToTarget(targetPart.Position, deltaTime)
+        else
+            -- Release lock if target dies or is lost
+            if currentTime - LockTime > 0.2 then
+                Target = nil
+                LastTarget = nil
+            end
+            FOVCircle.Color = Color3.fromRGB(255, 0, 127)
+        end
+    else
+        FOVCircle.Color = Color3.fromRGB(255, 0, 127)
+    end
+    
+    -- ========== ESP DISTANCE UPDATE ==========
+	if ESP_ENABLED then
+		local camPos = Camera.CFrame.Position
+		for model, data in pairs(ESP_OBJECTS) do
+            -- If model became invalid (died) mid-frame, remove it
+            if not IsValidTarget(model) then
+                if data.Highlight then data.Highlight:Destroy() end
+                if data.Billboard then data.Billboard:Destroy() end
+                ESP_OBJECTS[model] = nil
+            else
+                local dist = (camPos - data.Root.Position).Magnitude
+                data.Label.Text = math.floor(dist) .. " studs"
+            end
+		end
+	end
+end)
+
+Library:Notify("SugmaHacks", "Loaded", 5)
