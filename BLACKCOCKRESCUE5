@@ -12,15 +12,20 @@ local Lighting = game:GetService("Lighting")
 local Player = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
--- ==================== CONFIGURATION ====================
+-- ==================== CONFIGURATION (EDIT THESE TO CHANGE DEFAULTS) ====================
 
 -- Aimbot Settings
 local AimbotEnabled = false
 local AimPart = "Head"
-local FOVRadius = 300
+local FOVRadius = 130      -- Default FOV
 local ShowFOV = true
-local Smoothness = 8
+local Smoothness = 15      -- Default Smoothness
 local DeadZone = 5
+
+-- Prediction Settings
+local PredictionEnabled = false
+local PredictionStrength = 4   -- Default Prediction Amount
+local CloseRangeDistance = 15  -- Default Close Range Cutoff
 
 -- ESP Settings
 local ESP_ENABLED = false
@@ -28,7 +33,7 @@ local ESP_OBJECTS = {}
 
 -- Shared Scanning
 local SCAN_INTERVAL = 0.5
-local ValidTargets = {} -- Shared table for both ESP and Aimbot
+local ValidTargets = {} 
 
 -- Visuals Settings
 local FullbrightEnabled = false
@@ -51,19 +56,16 @@ FOVCircle.Transparency = 1
 
 -- ==================== HELPER FUNCTIONS ====================
 
--- Checks if a model is a valid living target
 local function IsValidTarget(model)
 	if not model or not model.Parent then return false end
 	if model.Name ~= "Male" then return false end
 	
-	-- 1. Check for BallSocketConstraints (Dead Check)
 	for _, descendant in ipairs(model:GetDescendants()) do
 		if descendant:IsA("BallSocketConstraint") then
-			return false -- Has ball socket → considered dead
+			return false 
 		end
 	end
 	
-	-- 2. Check for Body Parts
 	local head = model:FindFirstChild("Head")
 	local root = model:FindFirstChild("Root") or model:FindFirstChild("HumanoidRootPart")
 	
@@ -87,10 +89,8 @@ local function clearESP()
 end
 
 local function updateESP()
-    -- Sync ESP with ValidTargets table
     if not ESP_ENABLED then return end
 
-    -- Remove invalid/dead ESP
     for model, data in pairs(ESP_OBJECTS) do
         if not IsValidTarget(model) then
             if data.Highlight then data.Highlight:Destroy() end
@@ -99,7 +99,6 @@ local function updateESP()
         end
     end
 
-    -- Add new ESP
     for _, model in ipairs(ValidTargets) do
         if not ESP_OBJECTS[model] then
             local root = model:FindFirstChild("Root") or model:FindFirstChild("HumanoidRootPart")
@@ -148,19 +147,16 @@ local function getClosestTarget()
     local mousePos = UserInputService:GetMouseLocation()
     local centerScreen = Camera.ViewportSize / 2
 
-    -- Sticky targeting (Keeps locked on until dead or key released)
     if LastTarget and LastTarget.Parent and IsValidTarget(LastTarget.Parent) then
         local pos, onScreen = Camera:WorldToViewportPoint(LastTarget.Position)
         if onScreen then
             local distanceFromMouse = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
-            -- If target is still relatively close to mouse, stick to it
             if distanceFromMouse <= FOVRadius * 1.5 then
                 return LastTarget
             end
         end
     end
 
-    -- Find new target from ValidTargets table
     for _, model in ipairs(ValidTargets) do
         local part = model:FindFirstChild(AimPart)
         if part then
@@ -213,7 +209,8 @@ local MainGui = Library:CreateWindow("SugmaHacks - PD Edition")
 -- [ TAB 1: AIMBOT ]
 local CombatElements = MainGui:CreateTab("Aimbot")
 
-CombatElements:CreateToggle("Aimbot Enabled", "AimbotToggle", false, function(state) 
+-- Using 'AimbotEnabled' variable as default
+CombatElements:CreateToggle("Aimbot Enabled", "AimbotToggle", AimbotEnabled, function(state) 
     AimbotEnabled = state 
 end)
 
@@ -221,26 +218,50 @@ CombatElements:CreateDropdown("Aim Part", "AimPartDrop", {"Head", "Root"}, funct
     AimPart = val 
 end)
 
-CombatElements:CreateSlider("FOV Radius", "FOVRad", 50, 800, 300, function(val) 
+-- Using 'FOVRadius' variable as default
+CombatElements:CreateSlider("FOV Radius", "FOVRad", 50, 800, FOVRadius, function(val) 
     FOVRadius = val 
 end)
 
-CombatElements:CreateToggle("Show FOV Circle", "ShowFOVToggle", false, function(state) 
+-- Using 'ShowFOV' variable as default
+CombatElements:CreateToggle("Show FOV Circle", "ShowFOVToggle", ShowFOV, function(state) 
     ShowFOV = state 
 end)
 
-CombatElements:CreateSlider("Smoothness", "SmoothVal", 1, 20, 8, function(val) 
+-- Using 'Smoothness' variable as default
+CombatElements:CreateSlider("Smoothness", "SmoothVal", 1, 20, Smoothness, function(val) 
     Smoothness = val 
 end)
 
-CombatElements:CreateSlider("DeadZone", "DeadZoneVal", 1, 20, 5, function(val) 
+-- Using 'DeadZone' variable as default
+CombatElements:CreateSlider("DeadZone", "DeadZoneVal", 1, 20, DeadZone, function(val) 
     DeadZone = val 
 end)
+
+-- [ PREDICTION UI ]
+CombatElements:CreateLabel("--- Prediction ---")
+
+-- Using 'PredictionEnabled' variable as default
+CombatElements:CreateToggle("Prediction Enabled", "PredToggle", PredictionEnabled, function(state) 
+    PredictionEnabled = state 
+end)
+
+-- Using 'PredictionStrength' variable as default
+CombatElements:CreateSlider("Prediction Strength", "PredStr", 1, 20, PredictionStrength, function(val) 
+    PredictionStrength = val 
+end)
+
+-- Using 'CloseRangeDistance' variable as default
+CombatElements:CreateSlider("Close Range Cutoff", "PredCutoff", 0, 100, CloseRangeDistance, function(val) 
+    CloseRangeDistance = val 
+end)
+
 
 -- [ TAB 2: ESP ]
 local ESPElements = MainGui:CreateTab("ESP")
 
-ESPElements:CreateToggle("Male ESP", "MaleESP", false, function(state) 
+-- Using 'ESP_ENABLED' variable as default
+ESPElements:CreateToggle("Male ESP", "MaleESP", ESP_ENABLED, function(state) 
     ESP_ENABLED = state
     if not state then 
         clearESP() 
@@ -250,11 +271,13 @@ end)
 -- [ TAB 3: VISUALS ]
 local VisualElements = MainGui:CreateTab("Visuals")
 
-VisualElements:CreateToggle("Fullbright", "Fullbright", false, function(state) 
+-- Using 'FullbrightEnabled' variable as default
+VisualElements:CreateToggle("Fullbright", "Fullbright", FullbrightEnabled, function(state) 
     FullbrightEnabled = state 
 end)
 
-VisualElements:CreateSlider("Time Changer", "TimeVal", 0, 24, 12, function(val) 
+-- Using 'TimeChangerValue' variable as default
+VisualElements:CreateSlider("Time Changer", "TimeVal", 0, 24, TimeChangerValue, function(val) 
     TimeChangerValue = val 
 end)
 
@@ -262,12 +285,9 @@ MainGui:CreateConfigTab()
 
 -- ==================== BACKGROUND LOOPS ====================
 
--- UNIFIED SCANNING LOOP
--- This scans Workspace for valid (LIVING) players and updates the table used by BOTH ESP and Aimbot.
 task.spawn(function()
     while true do
         local tempTargets = {}
-        -- Using GetChildren to match ESP logic and reduce lag
         for _, obj in ipairs(Workspace:GetChildren()) do
             if IsValidTarget(obj) then
                 table.insert(tempTargets, obj)
@@ -292,9 +312,10 @@ RunService.RenderStepped:Connect(function()
     local deltaTime = currentTime - lastFrameTime
     lastFrameTime = currentTime
     
-    -- Sync Lib Values
+    -- Sync Lib Values (Fail-safe syncing)
     if Library.Flags["FOVRad"] then FOVRadius = Library.Flags["FOVRad"] end
     if Library.Flags["SmoothVal"] then Smoothness = Library.Flags["SmoothVal"] end
+    if Library.Flags["PredStr"] then PredictionStrength = Library.Flags["PredStr"] end
     
     -- ========== VISUALS ==========
     if FullbrightEnabled then
@@ -318,15 +339,30 @@ RunService.RenderStepped:Connect(function()
     if IsAiming then
         local targetPart = getClosestTarget()
         
-        -- Double check target is still valid/alive before aiming
         if targetPart and targetPart.Parent and IsValidTarget(targetPart.Parent) then
             Target = targetPart
             LastTarget = targetPart
             LockTime = currentTime
             FOVCircle.Color = Color3.fromRGB(0, 255, 0)
-            moveMouseToTarget(targetPart.Position, deltaTime)
+            
+            -- [[ PREDICTION LOGIC ]]
+            local finalPosition = targetPart.Position
+            
+            if PredictionEnabled then
+                local root = targetPart.Parent:FindFirstChild("Root") or targetPart.Parent:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local distance = (Camera.CFrame.Position - root.Position).Magnitude
+                    
+                    if distance > CloseRangeDistance then
+                        local velocity = root.AssemblyLinearVelocity
+                        local timeToHit = (distance / 1000) * PredictionStrength 
+                        finalPosition = finalPosition + (velocity * timeToHit)
+                    end
+                end
+            end
+            
+            moveMouseToTarget(finalPosition, deltaTime)
         else
-            -- Release lock if target dies or is lost
             if currentTime - LockTime > 0.2 then
                 Target = nil
                 LastTarget = nil
@@ -341,7 +377,6 @@ RunService.RenderStepped:Connect(function()
 	if ESP_ENABLED then
 		local camPos = Camera.CFrame.Position
 		for model, data in pairs(ESP_OBJECTS) do
-            -- If model became invalid (died) mid-frame, remove it
             if not IsValidTarget(model) then
                 if data.Highlight then data.Highlight:Destroy() end
                 if data.Billboard then data.Billboard:Destroy() end
