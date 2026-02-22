@@ -12,23 +12,31 @@ local Lighting = game:GetService("Lighting")
 local Player = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
--- ==================== CONFIGURATION (EDIT THESE TO CHANGE DEFAULTS) ====================
+-- ==================== CONFIGURATION (LOADER COMPATIBLE) ====================
+
+-- Helper function to safely get global variables or fallback to default
+local function getConfig(name, default)
+    if getgenv()[name] ~= nil then
+        return getgenv()[name]
+    end
+    return default
+end
 
 -- Aimbot Settings
-local AimbotEnabled = false
-local AimPart = "Head"
-local FOVRadius = 130      -- Default FOV
-local ShowFOV = true
-local Smoothness = 15      -- Default Smoothness
-local DeadZone = 5
+local AimbotEnabled = getConfig("AimbotEnabled", false)
+local AimPart = getConfig("AimPart", "Head")
+local FOVRadius = getConfig("FOVRadius", 130)
+local ShowFOV = getConfig("ShowFOV", true)
+local Smoothness = getConfig("Smoothness", 15)
+local DeadZone = getConfig("DeadZone", 5)
 
 -- Prediction Settings
-local PredictionEnabled = false
-local PredictionStrength = 4   -- Default Prediction Amount
-local CloseRangeDistance = 15  -- Default Close Range Cutoff
+local PredictionEnabled = getConfig("PredictionEnabled", false)
+local PredictionStrength = getConfig("PredictionStrength", 6)
+local CloseRangeDistance = getConfig("CloseRangeDistance", 15)
 
 -- ESP Settings
-local ESP_ENABLED = false
+local ESP_ENABLED = getConfig("ESP_ENABLED", false)
 local ESP_OBJECTS = {}
 
 -- Shared Scanning
@@ -36,8 +44,8 @@ local SCAN_INTERVAL = 0.5
 local ValidTargets = {} 
 
 -- Visuals Settings
-local FullbrightEnabled = false
-local TimeChangerValue = 12
+local FullbrightEnabled = getConfig("FullbrightEnabled", false)
+local TimeChangerValue = getConfig("TimeChangerValue", 12)
 
 -- Aimbot Runtime
 local Target = nil
@@ -60,12 +68,14 @@ local function IsValidTarget(model)
 	if not model or not model.Parent then return false end
 	if model.Name ~= "Male" then return false end
 	
+	-- Check for BallSocketConstraints (Dead Check)
 	for _, descendant in ipairs(model:GetDescendants()) do
 		if descendant:IsA("BallSocketConstraint") then
 			return false 
 		end
 	end
 	
+	-- Check for Body Parts
 	local head = model:FindFirstChild("Head")
 	local root = model:FindFirstChild("Root") or model:FindFirstChild("HumanoidRootPart")
 	
@@ -91,6 +101,7 @@ end
 local function updateESP()
     if not ESP_ENABLED then return end
 
+    -- Cleanup invalid
     for model, data in pairs(ESP_OBJECTS) do
         if not IsValidTarget(model) then
             if data.Highlight then data.Highlight:Destroy() end
@@ -99,6 +110,7 @@ local function updateESP()
         end
     end
 
+    -- Create new
     for _, model in ipairs(ValidTargets) do
         if not ESP_OBJECTS[model] then
             local root = model:FindFirstChild("Root") or model:FindFirstChild("HumanoidRootPart")
@@ -209,7 +221,6 @@ local MainGui = Library:CreateWindow("SugmaHacks - PD Edition")
 -- [ TAB 1: AIMBOT ]
 local CombatElements = MainGui:CreateTab("Aimbot")
 
--- Using 'AimbotEnabled' variable as default
 CombatElements:CreateToggle("Aimbot Enabled", "AimbotToggle", AimbotEnabled, function(state) 
     AimbotEnabled = state 
 end)
@@ -218,22 +229,18 @@ CombatElements:CreateDropdown("Aim Part", "AimPartDrop", {"Head", "Root"}, funct
     AimPart = val 
 end)
 
--- Using 'FOVRadius' variable as default
 CombatElements:CreateSlider("FOV Radius", "FOVRad", 50, 800, FOVRadius, function(val) 
     FOVRadius = val 
 end)
 
--- Using 'ShowFOV' variable as default
 CombatElements:CreateToggle("Show FOV Circle", "ShowFOVToggle", ShowFOV, function(state) 
     ShowFOV = state 
 end)
 
--- Using 'Smoothness' variable as default
 CombatElements:CreateSlider("Smoothness", "SmoothVal", 1, 20, Smoothness, function(val) 
     Smoothness = val 
 end)
 
--- Using 'DeadZone' variable as default
 CombatElements:CreateSlider("DeadZone", "DeadZoneVal", 1, 20, DeadZone, function(val) 
     DeadZone = val 
 end)
@@ -241,17 +248,14 @@ end)
 -- [ PREDICTION UI ]
 CombatElements:CreateLabel("--- Prediction ---")
 
--- Using 'PredictionEnabled' variable as default
 CombatElements:CreateToggle("Prediction Enabled", "PredToggle", PredictionEnabled, function(state) 
     PredictionEnabled = state 
 end)
 
--- Using 'PredictionStrength' variable as default
 CombatElements:CreateSlider("Prediction Strength", "PredStr", 1, 20, PredictionStrength, function(val) 
     PredictionStrength = val 
 end)
 
--- Using 'CloseRangeDistance' variable as default
 CombatElements:CreateSlider("Close Range Cutoff", "PredCutoff", 0, 100, CloseRangeDistance, function(val) 
     CloseRangeDistance = val 
 end)
@@ -260,7 +264,6 @@ end)
 -- [ TAB 2: ESP ]
 local ESPElements = MainGui:CreateTab("ESP")
 
--- Using 'ESP_ENABLED' variable as default
 ESPElements:CreateToggle("Male ESP", "MaleESP", ESP_ENABLED, function(state) 
     ESP_ENABLED = state
     if not state then 
@@ -271,12 +274,10 @@ end)
 -- [ TAB 3: VISUALS ]
 local VisualElements = MainGui:CreateTab("Visuals")
 
--- Using 'FullbrightEnabled' variable as default
 VisualElements:CreateToggle("Fullbright", "Fullbright", FullbrightEnabled, function(state) 
     FullbrightEnabled = state 
 end)
 
--- Using 'TimeChangerValue' variable as default
 VisualElements:CreateSlider("Time Changer", "TimeVal", 0, 24, TimeChangerValue, function(val) 
     TimeChangerValue = val 
 end)
@@ -312,7 +313,7 @@ RunService.RenderStepped:Connect(function()
     local deltaTime = currentTime - lastFrameTime
     lastFrameTime = currentTime
     
-    -- Sync Lib Values (Fail-safe syncing)
+    -- Sync Lib Values (Fail-safe)
     if Library.Flags["FOVRad"] then FOVRadius = Library.Flags["FOVRad"] end
     if Library.Flags["SmoothVal"] then Smoothness = Library.Flags["SmoothVal"] end
     if Library.Flags["PredStr"] then PredictionStrength = Library.Flags["PredStr"] end
