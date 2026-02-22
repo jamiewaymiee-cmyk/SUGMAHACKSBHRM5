@@ -1,5 +1,7 @@
+-- [ LIBRARY LOAD ]
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/jamiewaymiee-cmyk/SUGMA-LIBRARY/refs/heads/main/SUGMAHACKS", true))()
 
+-- [ SERVICES ]
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
@@ -49,35 +51,25 @@ FOVCircle.Transparency = 1
 
 -- ==================== HELPER FUNCTIONS ====================
 
--- Checks if a model is a valid living target based on BallSocketConstraints
+-- Checks if a model is a valid living target
 local function IsValidTarget(model)
-    if not model or not model.Parent then return false end
-    if model.Name ~= "Male" then return false end
-    
-    -- 1. Check for Body Parts (Essential)
-    local head = model:FindFirstChild("Head")
-    local root = model:FindFirstChild("Root") or model:FindFirstChild("HumanoidRootPart")
-    
-    if not head or not root then return false end
-
-    -- 2. THE CUSTOM DEATH CHECK
-    -- We scan the model. If we find a BallSocketConstraint, they are ALIVE.
-    -- If we loop through everything and find nothing, they are DEAD.
-    local hasJoints = false
-    
-    -- We use GetDescendants because the joints might be inside specific parts
-    for _, obj in ipairs(model:GetDescendants()) do
-        if obj:IsA("BallSocketConstraint") then
-            hasJoints = true
-            break -- Found one, no need to keep searching
-        end
-    end
-
-    if not hasJoints then
-        return false -- No joints found -> Confirmed Dead
-    end
-
-    return true -- Has joints -> Confirmed Alive
+	if not model or not model.Parent then return false end
+	if model.Name ~= "Male" then return false end
+	
+	-- 1. Check for BallSocketConstraints (Dead Check)
+	for _, descendant in ipairs(model:GetDescendants()) do
+		if descendant:IsA("BallSocketConstraint") then
+			return false -- Has ball socket → considered dead
+		end
+	end
+	
+	-- 2. Check for Body Parts
+	local head = model:FindFirstChild("Head")
+	local root = model:FindFirstChild("Root") or model:FindFirstChild("HumanoidRootPart")
+	
+	if not head or not root then return false end
+	
+	return true
 end
 
 local function isRightClickHeld()
@@ -100,7 +92,6 @@ local function updateESP()
 
     -- Remove invalid/dead ESP
     for model, data in pairs(ESP_OBJECTS) do
-        -- If target is no longer in ValidTargets or check fails
         if not IsValidTarget(model) then
             if data.Highlight then data.Highlight:Destroy() end
             if data.Billboard then data.Billboard:Destroy() end
@@ -350,7 +341,7 @@ RunService.RenderStepped:Connect(function()
 	if ESP_ENABLED then
 		local camPos = Camera.CFrame.Position
 		for model, data in pairs(ESP_OBJECTS) do
-            -- If model became invalid (lost sockets/dead) mid-frame, remove it
+            -- If model became invalid (died) mid-frame, remove it
             if not IsValidTarget(model) then
                 if data.Highlight then data.Highlight:Destroy() end
                 if data.Billboard then data.Billboard:Destroy() end
@@ -363,4 +354,4 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-Library:Notify("SugmaHacks", "loaded", 5)
+Library:Notify("SugmaHacks", "Loaded", 5)
